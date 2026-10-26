@@ -517,7 +517,7 @@ function openCompany(i, reveal){
   keepDots($('intro'));
   $('thread').innerHTML = '';
   $('next').className = 'next' + rv;
-  $('pad').style.height = '0px';
+  $('pad').style.height = '0px'; padT = null; padFull = false;
   st.asked = {}; st.busy = false; st.last = -1;
   buildChips(); updateNext();
   show('detail');
@@ -599,8 +599,9 @@ function ask(k){
   var t = document.createElement('div'); t.className = 'turn'; t.id = 'turn-' + k;
   t.innerHTML = '<div class="ask"><div>' + esc(askLabel(s)) + '</div></div><div class="typing" aria-hidden="true"><i></i><i></i><i></i></div>';
   $('thread').appendChild(t);
-  var target = function(){ return docTop(t) - barH() - gap; };
+  var target = function(){ return padTarget(t); };
   var P = $('pad');
+  padT = t; padFull = true;
   P.style.height = window.innerHeight + 'px';
   scrollToY(target());
   setTimeout(function(){
@@ -610,13 +611,32 @@ function ask(k){
     a.innerHTML = '<div class="who">' + esc(c.handle) + ' · ' + esc(s.label) + '</div>' + (s.title ? '<h3 class="h">' + esc(s.title) + '</h3>' : '') + blocks(s);
     t.appendChild(a); keepDots(a);
     counters(a); updateNext();
-    P.style.height = '0px';
-    var need = target() + window.innerHeight - document.documentElement.scrollHeight;
-    P.style.height = Math.max(0, Math.ceil(need)) + 'px';
+    padFull = false; fitPad();
     scrollToY(target());
     setTimeout(function(){ if (st.gen !== g) return; st.busy = false; spy(); updateBar(); }, 600);
   }, 500);
 }
+/* 하단 여백(#pad): 마지막 질문 말풍선을 상단 바 바로 아래까지 올릴 수 있게 문서 끝을 늘림 */
+var padT = null, padFull = false, PAD_GAP = 12;
+function padTarget(t){ return docTop(t) - barH() - PAD_GAP; }
+function fitPad(){
+  var P = $('pad');
+  P.style.height = '0px';
+  var need = padTarget(padT) + window.innerHeight - document.documentElement.scrollHeight;
+  P.style.height = Math.max(0, Math.ceil(need)) + 'px';
+}
+/* 전체화면 진입·해제로 뷰포트 높이가 바뀌면 여백을 새 높이에 맞춰 다시 계산하고, 보던 위치를 그대로 유지 */
+function refitPad(){
+  if (st.screen !== 'detail' || !padT || !padT.parentNode) return;
+  var P = $('pad'), y = window.scrollY;
+  if (padFull){ P.style.height = window.innerHeight + 'px'; return; }
+  var de = document.documentElement;
+  var atEnd = y >= de.scrollHeight - window.innerHeight - 2;   /* 높이가 커지면 브라우저가 이미 끝으로 당겨 놓았을 수 있음 */
+  fitPad();
+  var ny = atEnd && (parseFloat(P.style.height) || 0) > 0 ? Math.max(0, Math.round(padTarget(padT))) : y;
+  if (Math.abs(window.scrollY - ny) > 1) window.scrollTo(0, ny);
+}
+
 /* 현재 읽는 답변에 맞춰 키워드 탭 표시 */
 function spy(){
   if (st.screen !== 'detail') return;
@@ -710,7 +730,36 @@ function toast(m){ var t = $('toast'); t.textContent = m; t.classList.add('on');
 
 /* 화면 크기 변화: 캔버스 재계산, 관찰 영역 재설정 */
 var rzT;
-addEventListener('resize', function(){ clearTimeout(rzT); rzT = setTimeout(function(){ if (st.screen === 'home' && !HT.running()) HT.redraw(); makeIO(); spy(); }, 150); });
+addEventListener('resize', function(){
+  if (Date.now() - fsAt < 2500) refitPad();   /* 전체화면 전환에 따른 높이 변화만 즉시 보정 (주소창 접힘 등 일반 리사이즈는 기존 동작 그대로) */
+  clearTimeout(rzT); rzT = setTimeout(function(){ if (st.screen === 'home' && !HT.running()) HT.redraw(); makeIO(); spy(); }, 150);
+});
+
+/* 첫 터치/클릭 때 전체화면 1회 시도 (Android 크롬 등 지원 브라우저만. 아이폰 사파리는 미지원이라 아무 일도 하지 않음)
+   - 캡처 단계에서 듣기만 하고 preventDefault/stopPropagation 하지 않음: 그 터치가 원래 하던 동작(질문 행 열기 등)은 그대로
+   - 거부·예외는 조용히 무시, 성공·실패와 관계없이 다시 시도하지 않음(전체화면을 빠져나와도 재시도 없음) */
+var fsAt = 0;
+function onFsChange(){ fsAt = Date.now(); refitPad(); }
+document.addEventListener('fullscreenchange', onFsChange);
+document.addEventListener('webkitfullscreenchange', onFsChange);
+(function(){
+  var de = document.documentElement, tried = false;
+  if (!(document.fullscreenEnabled || document.webkitFullscreenEnabled)) return;
+  if (!de.requestFullscreen && !de.webkitRequestFullscreen) return;
+  function off(){ removeEventListener('pointerup', first, true); removeEventListener('click', first, true); }
+  function first(){
+    if (tried) return;
+    tried = true; off();
+    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+    fsAt = Date.now();
+    try {
+      var r = de.requestFullscreen ? de.requestFullscreen({ navigationUI: 'hide' }) : de.webkitRequestFullscreen();
+      if (r && typeof r.then === 'function') r.then(null, function(){});
+    } catch (e) {}
+  }
+  addEventListener('pointerup', first, true);
+  addEventListener('click', first, true);
+})();
 
 /* 시작: #home, #c0~#c6 (#c3a5 = 해당 기업 5번 섹션까지 열기) */
 var h0 = location.hash || '';

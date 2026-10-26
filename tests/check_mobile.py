@@ -6,6 +6,8 @@
 - 뷰포트 4종 x 7개사: 목록 > 행 터치 > 진입 연출 종료 대기 > 다음 질문(인라인 카드 또는 고정 바)으로 MENTOR까지 > 다른 기업 이야기 보기 > 목록
   답변마다 (a) 가로 스크롤 없음 (b) 다음 질문 어포던스 보임 (c) 보이는 글자 12px 이상, 본문 p 16px 이상 (d) 콘솔 에러·요청 실패 0
 - 키워드 탭(MARKET), 뒤로가기(go_back), 링크 href, 키워드 탭바 한 줄 수용, 스크린샷(shots/)
+- 전체화면: 첫 터치에서 1회 요청(행 열기는 그대로), 해제 후 재시도 없음, 거부·미지원(아이폰 사파리 모사)에서 에러 0,
+  전체화면 진입·해제로 뷰포트 높이가 바뀌어도(헤드리스는 실제 창 크기가 안 바뀌어 set_viewport_size로 모사) 진입 연출·답변 위치가 튀지 않음
 통과 기준: 모든 뷰포트에서 "screens N no-next []" 와 errors [] 출력
 """
 import asyncio, json, os, sys
@@ -14,7 +16,7 @@ from playwright.async_api import async_playwright
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 URL = 'file://' + os.path.join(ROOT, 'dist', 'index.html')
 SHOTS = os.path.join(ROOT, 'shots')
-DATA = json.load(open(os.path.join(ROOT, 'kiosk-src', 'data.json'), encoding='utf-8'))
+DATA = json.load(open(os.path.join(ROOT, 'data', 'data.json'), encoding='utf-8'))
 VIEWPORTS = [('360x780', 360, 780), ('393x852', 393, 852), ('412x915', 412, 915), ('440x956', 440, 956)]
 EXPECT_HOME = {i: c['home'] for i, c in enumerate(DATA)}
 
@@ -29,6 +31,19 @@ JS_STATE = """() => {
            sw: document.documentElement.scrollWidth, iw: innerWidth,
            turns: [...document.querySelectorAll('#thread .turn')].map(t => t.id) };
 }"""
+
+# requestFullscreen 호출 횟수·결과 기록 (원래 함수는 그대로 호출)
+FS_SPY = """(()=>{const o=Element.prototype.requestFullscreen; window.__fs={calls:0,ok:0,err:null};
+  if(o) Element.prototype.requestFullscreen=function(a){window.__fs.calls++; const r=o.call(this,a); r.then(()=>{window.__fs.ok++},e=>{window.__fs.err=String(e)}); return r;};})()"""
+FS_REJECT = "Element.prototype.requestFullscreen=function(){window.__fsReq=(window.__fsReq||0)+1;return Promise.reject(new TypeError('Permissions check failed'))}"
+FS_THROW = "Element.prototype.requestFullscreen=function(){window.__fsReq=(window.__fsReq||0)+1;throw new TypeError('not allowed')}"
+FS_IPHONE = """Object.defineProperty(Document.prototype,'fullscreenEnabled',{get(){return undefined}});
+  Object.defineProperty(Document.prototype,'webkitFullscreenEnabled',{get(){return undefined}});
+  delete Element.prototype.requestFullscreen; delete Element.prototype.webkitRequestFullscreen;"""
+FS_STUB = "Element.prototype.requestFullscreen=function(){window.__fsReq=(window.__fsReq||0)+1;return Promise.resolve()}"
+JS_POS = """() => { const t=[...document.querySelectorAll('#thread .turn')].pop(); const bar=document.querySelector('#dHead').getBoundingClientRect().bottom;
+  return { y: scrollY, rel: t ? Math.round(t.getBoundingClientRect().top - bar) : null, dq: Math.round(document.querySelector('#dQ').getBoundingClientRect().top),
+           logo: Math.round(document.querySelector('#intro img').getBoundingClientRect().top), pad: document.querySelector('#pad').style.height }; }"""
 
 JS_FONTS = """() => {
   const scr = document.querySelector('.screen.on');
@@ -100,11 +115,13 @@ async def run_viewport(b, vp, w, h):
     pg.on('console', lambda m: errors.append('console: ' + m.text) if m.type == 'error' else None)
     pg.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
     pg.on('requestfailed', lambda r: errors.append(f'requestfailed: {r.url} {r.failure}'))
+    await pg.add_init_script(FS_SPY)
     await pg.goto(URL)
     await pg.wait_for_timeout(600)
     shot = lambda name: pg.screenshot(path=os.path.join(SHOTS, f'{vp}_{name}.png'))
 
     bad, issues, screens, via = [], [], 0, {'card': 0, 'nbar': 0}
+    fs_first = None
     # 첫 화면
     if await pg.evaluate("document.documentElement.scrollWidth > innerWidth"):
         issues.append(f'{vp} home: horizontal scroll')
@@ -119,6 +136,16 @@ async def run_viewport(b, vp, w, h):
     for i, c in enumerate(DATA):
         await pg.locator(f'.row[data-i="{i}"]').tap()
         await wait_reveal_done(pg)
+        if i == 0:
+            # 첫 터치: 전체화면 1회 요청 + 행 열기는 정상
+            fs_first = await pg.evaluate("({fsEl: !!document.fullscreenElement, spy: window.__fs, detail: document.querySelector('#detail').classList.contains('on'), hash: location.hash, intro: document.querySelector('#dQ').textContent})")
+            if not fs_first['detail'] or fs_first['hash'] != '#c0' or fs_first['intro'] != c['intro']:
+                issues.append(f'{vp} first tap did not open row: {fs_first}')
+            if fs_first['spy']['calls'] != 1:
+                issues.append(f'{vp} first tap fullscreen calls {fs_first["spy"]}')
+            # 전체화면에서 빠져나와도 다시 시도하지 않아야 함
+            await pg.evaluate("document.fullscreenElement ? document.exitFullscreen().catch(()=>{}) : null")
+            await pg.wait_for_timeout(300)
         if chip_fit is None:
             chip_fit = await pg.evaluate("""(()=>{const C=document.querySelector('#chips');const r=C.getBoundingClientRect();
               const over=[...C.children].filter(x=>x.scrollWidth>x.clientWidth+0.5||x.getBoundingClientRect().right>r.right+0.5).map(x=>x.textContent);
@@ -187,6 +214,9 @@ async def run_viewport(b, vp, w, h):
     rv = await pg.evaluate("[[...document.querySelectorAll('#thread .turn')].map(t=>t.id).join(), document.querySelector('#dQ').textContent, document.querySelectorAll('#panel .rv:not(.on)').length]")
     if rv[0] != 'turn-3' or rv[1] != DATA[2]['intro'] or rv[2] != 0:
         issues.append(f'{vp} chip during reveal: {rv}')
+    fs_calls = await pg.evaluate("window.__fs.calls")
+    if fs_calls != 1:
+        issues.append(f'{vp} fullscreen requested {fs_calls} times (expected once)')
     # 뒤로가기
     await pg.go_back(); await pg.wait_for_timeout(500)
     back_ok = await pg.evaluate("document.querySelector('#home').classList.contains('on') && !document.querySelector('#detail').classList.contains('on')")
@@ -199,7 +229,71 @@ async def run_viewport(b, vp, w, h):
     if not dl[0] or DATA[4]['ko'] not in dl[1] or not dl_back:
         issues.append(f'{vp} deeplink #c4: {dl} back_to_home={dl_back}')
     await ctx.close()
-    return screens, bad, issues, errors, external, via, chip_fit, kw
+    fs_info = {'first': fs_first and {k: fs_first[k] for k in ('fsEl', 'spy')}, 'calls_total': fs_calls}
+    return screens, bad, issues, errors, external, via, chip_fit, kw, fs_info
+
+
+async def run_fullscreen_variants(b, vp, w, h):
+    """전체화면 거부·예외·미지원(아이폰 사파리 모사): 첫 터치가 행을 정상으로 열고 에러 0.
+    stub: 전체화면 진입/해제로 뷰포트 높이가 바뀌는 상황을 모사해 진입 연출·답변 위치가 튀지 않는지."""
+    issues, errors, external, info = [], [], [], {}
+    for mode, script in (('reject', FS_REJECT), ('throw', FS_THROW), ('iphone', FS_IPHONE), ('stub', FS_STUB)):
+        H0 = h - 110 if mode == 'stub' else h   # stub: 주소창·상태바가 있는 높이에서 시작해 전체화면 높이(h)로 커짐
+        ctx = await b.new_context(viewport={'width': w, 'height': H0}, is_mobile=True, has_touch=True, device_scale_factor=3, offline=True)
+
+        async def router(route):
+            if route.request.url.startswith(('file://', 'data:')):
+                await route.continue_()
+            else:
+                external.append(route.request.url); await route.abort()
+        await ctx.route('**/*', router)
+        pg = await ctx.new_page()
+        pg.on('console', lambda m, mode=mode: errors.append(f'{mode} console: ' + m.text) if m.type == 'error' else None)
+        pg.on('pageerror', lambda e, mode=mode: errors.append(f'{mode} pageerror: ' + str(e)))
+        await pg.add_init_script(script)
+        await pg.goto(URL); await pg.wait_for_timeout(500)
+        ci = 2
+        await pg.locator(f'.row[data-i="{ci}"]').tap()
+        if mode != 'stub':
+            await wait_reveal_done(pg)
+            r = await pg.evaluate("[document.querySelector('#detail').classList.contains('on'), location.hash, document.querySelector('#dQ').textContent, window.__fsReq || 0, !!document.fullscreenElement]")
+            info[mode] = {'opened': r[0] and r[1] == f'#c{ci}' and r[2] == DATA[ci]['intro'], 'requests': r[3]}
+            if not info[mode]['opened']:
+                issues.append(f'{vp} fs-{mode}: row not opened {r}')
+            if mode == 'iphone' and r[3] != 0:
+                issues.append(f'{vp} fs-iphone: requested {r[3]}')
+            if mode in ('reject', 'throw'):
+                await pg.locator('.chip', has_text='MARKET').tap(); await wait_answer(pg, 0)
+                n = await pg.evaluate("window.__fsReq || 0")
+                if n != 1: issues.append(f'{vp} fs-{mode}: requested {n} times (expected once)')
+        else:
+            # 진입 연출 중 높이 변화: 로고·회사 소개 위치와 스크롤 위치가 그대로여야 함
+            await pg.wait_for_timeout(600)
+            a = await pg.evaluate(JS_POS)
+            await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(300)
+            bb = await pg.evaluate(JS_POS)
+            if (a['dq'], a['logo'], a['y']) != (bb['dq'], bb['logo'], bb['y']):
+                issues.append(f'{vp} fs-stub reveal jumped {a} -> {bb}')
+            await wait_reveal_done(pg)
+            jumps = []
+            for step in range(4):
+                # 해제(작아짐) 상태에서 질문 > 다시 진입(커짐): 직전 질문 말풍선 위치 유지
+                await pg.evaluate("document.dispatchEvent(new Event('fullscreenchange'))")
+                await pg.set_viewport_size({'width': w, 'height': H0}); await pg.wait_for_timeout(250)
+                await tap_next(pg); await wait_answer(pg, 0)
+                s0 = await pg.evaluate(JS_POS)
+                await pg.evaluate("document.dispatchEvent(new Event('fullscreenchange'))")
+                await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(300)
+                s1 = await pg.evaluate(JS_POS)
+                jumps.append((s0['rel'], s1['rel'], s0['pad'], s1['pad']))
+                if abs(s0['rel'] - s1['rel']) > 1:
+                    issues.append(f'{vp} fs-stub answer {step + 1} moved {s0} -> {s1}')
+                st = await pg.evaluate(JS_STATE)
+                if not (st['card'] or st['nbar']):
+                    issues.append(f'{vp} fs-stub answer {step + 1}: no next affordance after resize')
+            info['stub'] = {'reveal_same': (a['dq'], a['y']) == (bb['dq'], bb['y']), 'rel/pad (before->after grow)': jumps}
+        await ctx.close()
+    return issues, errors, external, info
 
 
 async def main():
@@ -208,10 +302,13 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch()
         for vp, w, h in VIEWPORTS:
-            screens, bad, issues, errors, external, via, chip_fit, kw = await run_viewport(b, vp, w, h)
+            screens, bad, issues, errors, external, via, chip_fit, kw, fs_info = await run_viewport(b, vp, w, h)
+            fi, fe, fx, fv = await run_fullscreen_variants(b, vp, w, h)
+            issues += fi; errors += fe; external += fx
             print(f'[{vp}] screens {screens} no-next {bad}')
             print(f'[{vp}] advance via {via}; keyword-tab {kw}')
             print(f'[{vp}] tabbar {chip_fit}')
+            print(f'[{vp}] fullscreen {fs_info}; variants {fv}')
             print(f'[{vp}] issues {issues}')
             print(f'[{vp}] external {external}')
             print(f'[{vp}] errors {errors}')

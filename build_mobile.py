@@ -1,9 +1,10 @@
 """d.day one-pager 모바일 웹 빌드
-mobile/template.html + kiosk-src/data.json (+ kiosk-src 로고·사진·폰트) -> dist/
+mobile/template.html + data/data.json (+ kiosk-src 로고·사진·폰트) -> dist/
 
   python3 -I build_mobile.py
 
 - dist/ 를 지우고 새로 만든다. kiosk-src/ 는 읽기만 한다.
+- 원고는 data/data.json (kiosk-src/data.json 사본 + 모바일 워딩 변경). kiosk-src/data.json 은 읽지 않는다.
 - 폰트·이미지 파일명에 내용 해시 8자리를 붙인다(immutable 캐시 안전).
 - 끝에 금지 문자열 검사와 첫 로드 크기 예산 검사를 하고, 실패하면 종료 코드 1.
 필요: python3, pillow, fonttools(+brotli), pyftsubset
@@ -13,6 +14,7 @@ from PIL import Image
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, 'kiosk-src')
+DATA_JSON = os.path.join(ROOT, 'data', 'data.json')
 TPL = os.path.join(ROOT, 'mobile', 'template.html')
 DIST = os.path.join(ROOT, 'dist')
 ASSETS = os.path.join(DIST, 'assets')
@@ -20,7 +22,7 @@ ASSETS = os.path.join(DIST, 'assets')
 BUDGET = 400 * 1024          # 첫 화면 전송량 예산 (index.html + 폰트 2 + 로고 7)
 LOGO_MAX_H = 248             # 로고 높이 상한(2x). 원본이 더 작으면 원본 높이 유지(업스케일 안 함)
 MENTOR_Q = 80
-FORBIDDEN = ['타겟', 'orbit-04', '—', '디캠프', 'D.CAMP', 'PIONEER']
+FORBIDDEN = ['타겟', 'orbit-04', '—', '디캠프', 'D.CAMP', 'PIONEER', '전담 멘토']
 EXTRA_CHARS = '·…“”‘’→←↑↓~–•※₂₃₆°％✓'
 DESC = '궤도에 오르기까지, 일곱 개의 기록 / dcamp batch 4 7개사 원페이저'
 LOGOS = ['cosmo', 'idea', 'tefa', 'fust', 'space', 'pitin', 'gapt']
@@ -42,7 +44,7 @@ def main():
         shutil.rmtree(DIST)
     os.makedirs(ASSETS)
 
-    data = json.load(open(os.path.join(SRC, 'data.json'), encoding='utf-8'))
+    data = json.load(open(DATA_JSON, encoding='utf-8'))
     tpl = open(TPL, encoding='utf-8').read()
     kiosk_tpl = open(os.path.join(SRC, 'template.html'), encoding='utf-8').read()
 
