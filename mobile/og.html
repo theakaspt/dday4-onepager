@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!--
+  공유 미리보기 이미지(og:image) 원본. 1200x630.
+  build_mobile.py가 플레이스홀더를 채워 playwright로 스크린샷 -> dist/assets/og.<hash>.png
+  문구는 mobile/template.html의 CONFIG.event에서 가져옴 (kicker, lead, footL, footR) + "one-pager"
+-->
+<style>
+@font-face{font-family:"SUITO";src:url(__FONT_SUIT__) format("woff2");font-weight:100 900}
+@font-face{font-family:"ChivoO";src:url(__FONT_MONO__) format("woff2");font-weight:100 900}
+:root{--bg:#1b1615;--lime:#c8db99;--sub:#a39d98;--line:#3c3838;--rule:#72706f}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1200px;height:630px;overflow:hidden;background:var(--bg);color:#fff;-webkit-font-smoothing:antialiased}
+#cv{position:absolute;inset:0;width:1200px;height:630px}
+.wash{position:absolute;inset:0;background:linear-gradient(90deg,rgba(27,22,21,.92) 0%,rgba(27,22,21,.62) 50%,rgba(27,22,21,.18) 100%)}
+.in{position:absolute;inset:0;padding:64px 72px 0}
+.k{font-family:"ChivoO",monospace;font-size:26px;font-weight:600;letter-spacing:0}
+.lead{margin-top:30px;font-family:"SUITO",sans-serif;font-size:84px;font-weight:700;line-height:1.16;letter-spacing:-0.045em;word-break:keep-all}
+.lead .hl{color:var(--lime)}
+.logos{position:absolute;left:72px;right:72px;bottom:104px;display:flex;align-items:center;justify-content:space-between;gap:28px;padding-top:26px;border-top:2px solid var(--rule)}
+.logos img{display:block;width:auto;object-fit:contain;opacity:.92}
+.foot{position:absolute;left:72px;right:72px;bottom:44px;display:flex;justify-content:space-between;font-family:"ChivoO",monospace;font-size:22px;font-weight:500;color:var(--sub);letter-spacing:0}
+.foot i{display:inline-block;width:10px;height:10px;background:#fff;border-radius:50%;margin-right:12px;vertical-align:2px}
+</style>
+</head>
+<body>
+<canvas id="cv" width="1200" height="630"></canvas>
+<div class="wash"></div>
+<div class="in">
+  <div class="k">__KICKER__</div>
+  <div class="lead">__LEAD__</div>
+</div>
+<div class="logos">__LOGOS__</div>
+<div class="foot"><span><i></i>__FOOTL__</span><span>__FOOTR__</span></div>
+<script>
+/* 키오스크·모바일 첫 화면의 궤도 하프톤을 같은 설계 좌표(1080x1920)로 그린 정지 프레임 1장.
+   1200x630 화면에 맞춰 궤도 중심부를 오른쪽에 배치 */
+(function(){
+  var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  var W = 1200, H = 630, P = 7;
+  var s = 0.95, ox = 380, oy = -560;
+  var gw = Math.ceil(W / P), gh = Math.ceil(H / P);
+  var off = document.createElement('canvas'); off.width = gw; off.height = gh;
+  var o = off.getContext('2d', { willReadFrequently: true });
+  var COLS = ['#3a6dff', '#62b4ff', '#a6e8c8', '#dcf8b4'], DIM = 0.62;
+  var RINGS = [
+    { cx: 600, cy: 980,  r: 780, incl: 1.25, ax: 0.00, roll: 0.30, spd:  0.115, ph: 0.6, pr: 0.00, w: 40 },
+    { cx: 520, cy: 760,  r: 900, incl: 0.30, ax: 1.30, roll: -0.25, spd: -0.07, ph: 1.9, pr: 0.10, w: 36 },
+    { cx: 560, cy: 1040, r: 760, incl: 0.55, ax: -0.75, roll: 0.95, spd:  0.19, ph: 4.1, pr: 0.18, w: 22 }
+  ];
+  var NS = 120, LAY = [[2.6, .2], [1.45, .5], [1, 1]], t = 6;
+  function ring(g){
+    var inc = g.incl + g.pr * Math.sin(t * 0.06 + g.ph);
+    var a0 = g.ph + t * g.spd, ci = Math.cos(inc), si = Math.sin(inc), cs = Math.cos(a0), ss = Math.sin(a0), cr = Math.cos(g.roll), sr = Math.sin(g.roll), ca = Math.cos(g.ax), sa = Math.sin(g.ax);
+    var pts = [];
+    for (var i = 0; i <= NS; i++){
+      var a = i / NS * 6.2832, x = g.r * Math.cos(a), z0 = g.r * Math.sin(a);
+      var y = -z0 * si, z = z0 * ci;
+      var x2 = x * cs + z * ss, z2 = -x * ss + z * cs;
+      var y3 = y * ca - z2 * sa, z3 = y * sa + z2 * ca;
+      pts.push([g.cx + x2 * cr - y3 * sr, g.cy + x2 * sr + y3 * cr, z3 / g.r]);
+    }
+    for (var L = 0; L < 3; L++) for (var j = 1; j <= NS; j++){
+      var p0 = pts[j-1], p1 = pts[j], f = ((p0[2] + p1[2]) / 2 + 1) / 2;
+      o.beginPath(); o.moveTo(p0[0], p0[1]); o.lineTo(p1[0], p1[1]);
+      o.lineWidth = g.w * (0.45 + 0.55 * f) * LAY[L][0];
+      o.strokeStyle = 'rgba(255,255,255,' + (LAY[L][1] * (0.28 + 0.72 * f)) + ')';
+      o.stroke();
+    }
+  }
+  o.fillStyle = '#000'; o.fillRect(0, 0, gw, gh);
+  o.setTransform(s / P, 0, 0, s / P, ox / P, oy / P);
+  o.globalCompositeOperation = 'lighten'; o.lineCap = 'round';
+  RINGS.forEach(ring);
+  var d = o.getImageData(0, 0, gw, gh).data, paths = [new Path2D(), new Path2D(), new Path2D(), new Path2D()];
+  for (var gy = 0; gy < gh; gy++) for (var gx = 0; gx < gw; gx++){
+    var v = d[(gy * gw + gx) * 4] / 255; if (v < 0.05) continue;
+    var r = P * 0.44 * Math.min(1, 0.2 + v * 0.95), k = v >= .74 ? 3 : v >= .52 ? 2 : v >= .3 ? 1 : 0;
+    if (k === 0) r *= 0.8;
+    var x = gx * P + P / 2, y = gy * P + P / 2;
+    paths[k].moveTo(x + r, y); paths[k].arc(x, y, r, 0, 6.2832);
+  }
+  ctx.fillStyle = '#1b1615'; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = DIM; for (var i = 0; i < 4; i++){ ctx.fillStyle = COLS[i]; ctx.fill(paths[i]); }
+  document.documentElement.setAttribute('data-ready', '1');
+})();
+</script>
+</body>
+</html>

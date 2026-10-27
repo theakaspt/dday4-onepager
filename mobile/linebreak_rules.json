@@ -1,0 +1,23 @@
+{
+  "_about": "줄바꿈 보조 규칙. 원고(data/data.json)는 그대로 두고 build_mobile.py가 이 규칙으로 화면용 DATA를 만든다. 보이는 글자는 바뀌지 않는다. nw = 구절 전체를 한 줄로 묶음(<span class=\"nw\">, white-space:nowrap). nbhyphen = 구절 안의 '-'를 U+2011(줄이 안 나뉘는 하이픈, 모양은 같음)로 바꿈. where = intro | <섹션 key>.title | <섹션 key>.blocks. count = 그 위치에서 찾아야 하는 개수(다르면 빌드 실패: 원고가 바뀌었다는 뜻). B1(닫는 괄호·따옴표 뒤 조사)은 build_mobile.py의 B1_RE 정규식으로 원고 전체에 단어결합자를 넣고(묶음 규칙 적용 뒤), 아래 B1-n 규칙은 그중 괄호가 줄 첫머리에 오던 곳을 앞 단어까지 한 덩어리로 묶는다. 구절은 원문 그대로 적는다(보조 문자 없이).",
+  "nw": [
+    {"id": "B1-1", "qn": "Q-05", "where": "goal.title", "text": "서비스(CRO)를", "count": 1},
+    {"id": "B1-2", "qn": "Q-05", "where": "goal.blocks", "text": "위탁(CRO)으로", "count": 1},
+    {"id": "B1-3", "qn": "Q-05", "where": "goal.blocks", "text": "위탁생산(CDMO)으로", "count": 1},
+    {"id": "B1-4", "qn": "Q-01", "where": "goal.blocks", "text": "‘허니비’를", "count": 2},
+    {"id": "B1-5", "qn": "Q-03", "where": "problem.blocks", "text": "빈피킹(Bin-picking)이라고", "nbhyphen": true, "count": 1},
+    {"id": "B1-6", "qn": "Q-04", "where": "goal.blocks", "text": "장비(DEBREX)를", "count": 1},
+    {"id": "B2-2", "qn": "Q-04", "where": "market.blocks", "text": "(연구소·데모룸)", "count": 1},
+    {"id": "B2-3", "qn": "Q-01", "where": "problem.blocks", "text": "(KAIST·KAI·한화시스템 등)", "count": 1},
+    {"id": "B2-4", "qn": "Q-06", "where": "goal.blocks", "text": "S2G(Station to Grid)", "count": 1},
+    {"id": "B2-5", "qn": "Q-02", "where": "goal.blocks", "text": "Agent–METHEUS–CAD", "count": 1},
+    {"id": "B2-6", "qn": "Q-02", "where": "goal.blocks", "text": "Human-in-the-Loop", "count": 1},
+    {"id": "B3-1", "qn": "Q-01", "where": "why.title", "text": "부품 공급은", "count": 1},
+    {"id": "B3-2", "qn": "Q-02", "where": "intro", "text": "기계·제품 설계를", "count": 1},
+    {"id": "B3-3", "qn": "Q-02", "where": "market.title", "text": "기계·제조 설계", "count": 1},
+    {"id": "B3-4", "qn": "Q-02", "where": "goal.title", "text": "제작 가능한", "count": 1},
+    {"id": "B3-5", "qn": "Q-05", "where": "why.title", "text": "신약 개발은", "count": 1},
+    {"id": "B3-6", "qn": "Q-06", "where": "why.title", "text": "가장 큰데", "count": 1},
+    {"id": "B3-7", "qn": "Q-06", "where": "problem.title", "text": "충전 하나가", "count": 1}
+  ]
+}
